@@ -16,8 +16,8 @@
 #include <zephyr/sys/reboot.h>
 
 const size_t batch_size = 1; // the test is only for batch size 1
-const size_t input_channels = 2048;
-const size_t output_channels = 256;
+const size_t input_channels = 128;
+const size_t output_channels = 64;
 
 unsigned long cycle()
 {
