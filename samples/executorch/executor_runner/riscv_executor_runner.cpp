@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <vector>
-
+#include <zephyr/sys/reboot.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/memory_allocator.h>
@@ -356,5 +356,6 @@ int main()
 out:
 	ET_LOG(Info, "Program complete, exiting.");
 	ET_LOG(Info, "\04");
+	sys_reboot(SYS_REBOOT_COLD);
 	return 0;
 }

@@ -74,6 +74,7 @@ int main(void)
 
 	printf("Preparing input data and weights\n");
 	// Initialize input data
+	int8_t zero_point = 0;
 	for (size_t i = 0; i < input_channels; i++) {
 		input_data[i] = (float)i;
 	}
@@ -100,10 +101,13 @@ int main(void)
 	printf("Creating operators\n");
 	// Create the Fully Connected operator
 	xnn_operator_t fc_op = NULL;
-	status = xnn_create_fully_connected_nc_f32(input_channels,  // Input size per batch
+	status = xnn_create_fully_connected_nc_qs8_qc8w(
+						   input_channels,  // Input size per batch
 						   output_channels, // Output size per batch
 						   input_channels,  // Input stride
 						   output_channels, // Output stride
+						   /*zero_point=*/0,
+						   /*input_scale=*/1.0f,
 						   weights,         // Weights matrix
 						   bias,            // Bias vector
 						   -INFINITY,       // Min activation
