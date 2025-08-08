@@ -65,8 +65,9 @@ int main(void)
 	printf("XNNPACK initialized successfully!\n");
 
 	float *input_data = (float *)malloc(input_channels * sizeof(float));
-	float *weights = (float *)malloc(input_channels * output_channels * sizeof(float));
-	float *bias = (float *)malloc(output_channels * sizeof(float));
+	int8_t *weights = (int8_t *)malloc(input_channels * output_channels * sizeof(float));
+	float *scale = (float *)malloc(input_channels * sizeof(float));
+	int32_t *bias = (int32_t *)malloc(output_channels * sizeof(float));
 	float *output_data = (float *)malloc(output_channels * sizeof(float));
 	float *output_data_ref = (float *)malloc(output_channels * sizeof(float));
 
@@ -108,6 +109,7 @@ int main(void)
 						   output_channels, // Output stride
 						   /*zero_point=*/0,
 						   /*input_scale=*/1.0f,
+						   /*filter_scale=*/scale,
 						   weights,         // Weights matrix
 						   bias,            // Bias vector
 						   -INFINITY,       // Min activation
