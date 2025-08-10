@@ -16,8 +16,8 @@
 #include <zephyr/sys/reboot.h>
 
 const size_t batch_size = 1; // the test is only for batch size 1
-const size_t input_channels = 128;
-const size_t output_channels = 64;
+const size_t input_channels = 2048;
+const size_t output_channels = 256;
 
 unsigned long cycle()
 {
@@ -64,12 +64,16 @@ int main(void)
 	}
 	printf("XNNPACK initialized successfully!\n");
 
-	float *input_data = (float *)malloc(input_channels * sizeof(float));
-	int8_t *weights = (int8_t *)malloc(input_channels * output_channels * sizeof(float));
-	float *scale = (float *)malloc(input_channels * sizeof(float));
-	int32_t *bias = (int32_t *)malloc(output_channels * sizeof(float));
-	float *output_data = (float *)malloc(output_channels * sizeof(float));
-	float *output_data_ref = (float *)malloc(output_channels * sizeof(float));
+	int8_t *input_data = (int8_t *)malloc(input_channels * sizeof(int8_t));
+	int8_t *weights = (int8_t *)malloc(input_channels * output_channels * sizeof(int8_t));
+	float *scale = (float *)malloc(output_channels * sizeof(float));
+	int32_t *bias = (int32_t *)malloc(output_channels * sizeof(int32_t));
+	int8_t *output_data = (int8_t *)malloc(output_channels * sizeof(int8_t));
+	int8_t *output_data_ref = (int8_t *)malloc(output_channels * sizeof(int8_t));
+	
+	int8_t minzp = -128;
+	int8_t maxzp = 127;
+	int8_t outzp = 0;
 
 	printf("Test shapes: %zu, %zu\n", input_channels, output_channels);
 
@@ -77,26 +81,25 @@ int main(void)
 	// Initialize input data
 	int8_t zero_point = 0;
 	for (size_t i = 0; i < input_channels; i++) {
-		input_data[i] = (float)i;
+		input_data[i] = (int8_t)i;
 	}
 	// Initialize weights
 	for (size_t i = 0; i < input_channels * output_channels; i++) {
-		weights[i] = (float)i * i;
+		weights[i] = (int8_t)i * i;
 	}
 	for (size_t i = 0; i < output_channels; i++) {
-		bias[i] = (float)i;
-	}
-	// Initialize output data
-	for (size_t i = 0; i < output_channels; i++) {
-		output_data[i] = 0.0f;
-		output_data_ref[i] = 0.0f;
+		scale[i] = (float)1.0f;
+		bias[i] = (int32_t)i;
 	}
 	// Compute reference output
 	for (size_t i = 0; i < output_channels; i++) {
+		output_data[i] = 0;
+		int32_t acc = (int32_t) bias[i];
 		for (size_t j = 0; j < input_channels; j++) {
-			output_data_ref[i] += input_data[j] * weights[i * input_channels + j];
+			acc += ((int32_t)input_data[j]) * (int32_t)weights[i * input_channels + j];
 		}
-		output_data_ref[i] += bias[i];
+		float facc = scale[i] * (float)acc;
+		output_data_ref[i] = (int8_t)fmaxf(fminf(facc, 127.0f), -128.0f);
 	}
 
 	printf("Creating operators\n");
@@ -107,13 +110,15 @@ int main(void)
 						   output_channels, // Output size per batch
 						   input_channels,  // Input stride
 						   output_channels, // Output stride
-						   /*zero_point=*/0,
-						   /*input_scale=*/1.0f,
-						   /*filter_scale=*/scale,
+						   0,			   	// Input zero point
+						   1.0f,			// Input scale
+						   scale,	 		// kernel scale vector
 						   weights,         // Weights matrix
 						   bias,            // Bias vector
-						   -INFINITY,       // Min activation
-						   INFINITY,        // Max activation
+						   outzp,			   	// output zero point
+  						   1.0f,         	// Output scale
+						   minzp,       // Min activation
+						   maxzp,        // Max activation
 						   0,               // Flags
 						   NULL,            // Code cache
 						   NULL,            // Weights cache
@@ -125,7 +130,7 @@ int main(void)
 	}
 
 	// Reshape the operator
-	status = xnn_reshape_fully_connected_nc_f32(fc_op, batch_size, threadpool);
+	status = xnn_reshape_fully_connected_nc_qs8_qc8w(fc_op, batch_size, threadpool);
 	if (status != xnn_status_success) {
 		printf("Failed to reshape Fully Connected operator, status code: %d\n", status);
 		xnn_delete_operator(fc_op);
@@ -133,7 +138,7 @@ int main(void)
 	}
 
 	// Setup the operator
-	status = xnn_setup_fully_connected_nc_f32(fc_op, input_data, output_data);
+	status = xnn_setup_fully_connected_nc_qs8_qc8w(fc_op, input_data, output_data);
 	if (status != xnn_status_success) {
 		printf("Failed to setup Fully Connected operator, status code: %d\n", status);
 		xnn_delete_operator(fc_op);
