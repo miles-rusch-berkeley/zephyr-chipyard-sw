@@ -22,9 +22,9 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--pte", type=str, default="model.pte", help="Path to output the PTE file.")
-parser.add_argument("--model", type=str, choices=["mobilenet", "squeezenet", "alexnet", "mobilenetv3small", "mobilenetv3q", "transformer"],
+parser.add_argument("--model", type=str, choices=["mobilenet", "squeezenet", "alexnet", "mobilenetv3small", "mobilenetv3large", "transformer"],
                     default="mobilenet",
-                    help="Choose the model to export: 'mobilenet' (default), 'squeezenet', 'alexnet', 'mobilenetv3small', 'mobilenetv3q', or 'transformer'.")
+                    help="Choose the model to export: 'mobilenet' (default), 'squeezenet', 'alexnet', 'mobilenetv3small', 'mobilenetv3large', or 'transformer'.")
 parser.add_argument("--precision", type=str, choices=["fp32", "fp16"],
                     default="fp32",
                     help="Choose the model data type, fp32 or fp16")
