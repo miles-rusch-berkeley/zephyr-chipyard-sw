@@ -149,7 +149,7 @@ Result<BufferCleanup> prepare_input_tensors(Method &method, MemoryAllocator &all
 
 		if (tag.get() != Tag::Tensor)
 		{
-			ET_LOG(Debug, "Skipping non-tensor input %zu", i);
+			//ET_LOG(Debug, "Skipping non-tensor input %zu", i);
 			continue;
 		}
 		Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
@@ -167,12 +167,12 @@ Result<BufferCleanup> prepare_input_tensors(Method &method, MemoryAllocator &all
 			auto [buffer, buffer_size] = input_buffers.at(i);
 			if (buffer_size != tensor_meta->nbytes())
 			{
-				ET_LOG(Error, "input size (%d) and tensor size (%d) missmatch!", buffer_size, tensor_meta->nbytes());
+				//ET_LOG(Error, "input size (%d) and tensor size (%d) missmatch!", buffer_size, tensor_meta->nbytes());
 				err = Error::InvalidArgument;
 			}
 			else
 			{
-				ET_LOG(Info, "Copying read input to tensor.");
+				//ET_LOG(Info, "Copying read input to tensor.");
 				std::memcpy(data_ptr, buffer, buffer_size);
 			}
 		}
@@ -203,7 +203,7 @@ Result<BufferCleanup> prepare_input_tensors(Method &method, MemoryAllocator &all
 
 		if (err != Error::Ok)
 		{
-			ET_LOG(Error, "Failed to prepare input %zu: 0x%" PRIx32, i, (uint32_t)err);
+			//ET_LOG(Error, "Failed to prepare input %zu: 0x%" PRIx32, i, (uint32_t)err);
 			// The BufferCleanup will free the inputs when it goes out of scope.
 			BufferCleanup cleanup({inputs, num_allocated});
 			return err;
@@ -220,16 +220,16 @@ int main()
 	std::vector<std::pair<char *, size_t>> input_buffers;
 	size_t pte_size = model_pte_size;
 
-	ET_LOG(Info, "Model in %p %c", model_pte, model_pte[0]);
+	//ET_LOG(Info, "Model in %p %c", model_pte, model_pte[0]);
 	auto loader = BufferDataLoader(model_pte, pte_size);
-	ET_LOG(Info, "Model PTE file loaded. Size: %lu bytes.", pte_size);
+	//ET_LOG(Info, "Model PTE file loaded. Size: %lu bytes.", pte_size);
 	Result<Program> program = Program::load(&loader);
 	if (!program.ok())
 	{
-		ET_LOG(Info, "Program loading failed @ 0x%p: 0x%" PRIx32, model_pte, program.error());
+		//ET_LOG(Info, "Program loading failed @ 0x%p: 0x%" PRIx32, model_pte, program.error());
 	}
 
-	ET_LOG(Info, "Model buffer loaded, has %lu methods", program->num_methods());
+	//ET_LOG(Info, "Model buffer loaded, has %lu methods", program->num_methods());
 
 	const char *method_name = nullptr;
 	{
@@ -237,15 +237,15 @@ int main()
 		ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
 		method_name = *method_name_result;
 	}
-	ET_LOG(Info, "Running method %s", method_name);
+	//ET_LOG(Info, "Running method %s", method_name);
 
 	Result<MethodMeta> method_meta = program->method_meta(method_name);
 	if (!method_meta.ok())
 	{
-		ET_LOG(Info, "Failed to get method_meta for %s: 0x%x", method_name, (unsigned int)method_meta.error());
+		//ET_LOG(Info, "Failed to get method_meta for %s: 0x%x", method_name, (unsigned int)method_meta.error());
 	}
 
-	ET_LOG(Info, "Setup Method allocator pool. Size: %lu bytes.", method_allocation_pool_size);
+	//ET_LOG(Info, "Setup Method allocator pool. Size: %lu bytes.", method_allocation_pool_size);
 
 	RiscvMemoryAllocator method_allocator(method_allocation_pool_size, method_allocation_pool);
 
@@ -258,7 +258,7 @@ int main()
 	for (size_t id = 0; id < num_memory_planned_buffers; ++id)
 	{
 		size_t buffer_size = static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
-		ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
+		//ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
 
 		/* Move to it's own allocator when MemoryPlanner is in place. */
 		uint8_t *buffer = reinterpret_cast<uint8_t *>(method_allocator.allocate(buffer_size));
@@ -279,69 +279,69 @@ int main()
 	Result<Method> method = program->load_method(method_name, &memory_manager);
 	if (!method.ok())
 	{
-		ET_LOG(Info, "Loading of method %s failed with status 0x%" PRIx32, method_name, method.error());
+		//ET_LOG(Info, "Loading of method %s failed with status 0x%" PRIx32, method_name, method.error());
 	}
 	size_t method_loaded_memsize = method_allocator.used_size() - method_loaded_membase;
-	ET_LOG(Info, "Method loaded.");
+	//ET_LOG(Info, "Method loaded.");
 
-	ET_LOG(Info, "Preparing inputs...");
+	//ET_LOG(Info, "Preparing inputs...");
 	size_t input_membase = method_allocator.used_size();
 
 	auto inputs = ::prepare_input_tensors(*method, method_allocator, input_buffers);
 
 	if (!inputs.ok())
 	{
-		ET_LOG(Info, "Preparing inputs tensors for method %s failed with status 0x%" PRIx32, method_name,
-			   inputs.error());
+		//ET_LOG(Info, "Preparing inputs tensors for method %s failed with status 0x%" PRIx32, method_name,
+			//    inputs.error());
 	}
 	size_t input_memsize = method_allocator.used_size() - input_membase;
-	ET_LOG(Info, "Input prepared.");
+	//ET_LOG(Info, "Input prepared.");
 
-	ET_LOG(Info, "Starting the model execution...");
+	//ET_LOG(Info, "Starting the model execution...");
 	size_t executor_membase = method_allocator.used_size();
 	// StartMeasurements();
 	Error status = method->execute();
 	// StopMeasurements();
 	size_t executor_memsize = method_allocator.used_size() - executor_membase;
 
-	ET_LOG(Info, "model_pte_loaded_size:     %lu bytes.", pte_size);
+	//ET_LOG(Info, "model_pte_loaded_size:     %lu bytes.", pte_size);
 
 	if (method_allocator.size() != 0)
 	{
 		size_t method_allocator_used = method_allocator.used_size();
-		ET_LOG(Info, "method_allocator_used:     %zu / %zu  free: %zu ( used: %zu %% ) ", method_allocator_used,
-			   method_allocator.size(), method_allocator.free_size(),
-			   100 * method_allocator_used / method_allocator.size());
-		ET_LOG(Info, "method_allocator_planned:  %zu bytes", planned_buffer_memsize);
-		ET_LOG(Info, "method_allocator_loaded:   %zu bytes", method_loaded_memsize);
-		ET_LOG(Info, "method_allocator_input:    %zu bytes", input_memsize);
-		ET_LOG(Info, "method_allocator_executor: %zu bytes", executor_memsize);
+		//ET_LOG(Info, "method_allocator_used:     %zu / %zu  free: %zu ( used: %zu %% ) ", method_allocator_used,
+			//    method_allocator.size(), method_allocator.free_size(),
+			//    100 * method_allocator_used / method_allocator.size());
+		//ET_LOG(Info, "method_allocator_planned:  %zu bytes", planned_buffer_memsize);
+		//ET_LOG(Info, "method_allocator_loaded:   %zu bytes", method_loaded_memsize);
+		//ET_LOG(Info, "method_allocator_input:    %zu bytes", input_memsize);
+		//ET_LOG(Info, "method_allocator_executor: %zu bytes", executor_memsize);
 	}
 	if (temp_allocator.size() > 0)
 	{
-		ET_LOG(Info, "temp_allocator_used:       %zu / %zu free: %zu ( used: %zu %% ) ", temp_allocator.used_size(),
-			   temp_allocator.size(), temp_allocator.free_size(),
-			   100 * temp_allocator.used_size() / temp_allocator.size());
+		//ET_LOG(Info, "temp_allocator_used:       %zu / %zu free: %zu ( used: %zu %% ) ", temp_allocator.used_size(),
+			//    temp_allocator.size(), temp_allocator.free_size(),
+			//    100 * temp_allocator.used_size() / temp_allocator.size());
 	}
 
 	if (status != Error::Ok)
 	{
-		ET_LOG(Info, "Execution of method %s failed with status 0x%" PRIx32, method_name, status);
+		//ET_LOG(Info, "Execution of method %s failed with status 0x%" PRIx32, method_name, status);
 	}
 	else
 	{
-		ET_LOG(Info, "Model executed successfully.");
+		//ET_LOG(Info, "Model executed successfully.");
 	}
 
 	std::vector<EValue> outputs(method->outputs_size());
-	ET_LOG(Info, "%zu outputs: ", outputs.size());
+	//ET_LOG(Info, "%zu outputs: ", outputs.size());
 	status = method->get_outputs(outputs.data(), outputs.size());
 	ET_CHECK(status == Error::Ok);
 	// for (int i = 0; i < outputs.size(); ++i)
 	// {
 	// 	Tensor t = outputs[i].toTensor();
 	// 	// The output might be collected and parsed so printf() is used instead
-	// 	// of ET_LOG() here
+	// 	// of //ET_LOG() here
 	// 	for (int j = 0; j < outputs[i].toTensor().numel(); ++j)
 	// 	{
 	// 		if (t.scalar_type() == ScalarType::Int)
@@ -355,8 +355,8 @@ int main()
 	// 	}
 	// }
 out:
-	ET_LOG(Info, "Program complete, exiting.");
-	ET_LOG(Info, "\04");
+	//ET_LOG(Info, "Program complete, exiting.");
+	//ET_LOG(Info, "\04");
 	sys_reboot(SYS_REBOOT_COLD);
 	return 0;
 }

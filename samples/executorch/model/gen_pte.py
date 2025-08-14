@@ -2,9 +2,9 @@ import torch
 import torchvision.models as models
 
 from torch.export import export, ExportedProgram
-from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
 from torchvision.models.squeezenet import SqueezeNet1_0_Weights  # Import weights for SqueezeNet
+from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from torchvision.models.mobilenetv3 import MobileNet_V3_Small_Weights  # Import weights for MobileNetV3-Small
 from torchvision.models.mobilenetv3 import MobileNet_V3_Large_Weights
 
@@ -22,9 +22,9 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--pte", type=str, default="model.pte", help="Path to output the PTE file.")
-parser.add_argument("--model", type=str, choices=["mobilenet", "squeezenet", "alexnet", "mobilenetv3small", "mobilenetv3large", "transformer"],
+parser.add_argument("--model", type=str, choices=["mobilenet", "squeezenet", "alexnet", "resnet", "mobilenetv3small", "mobilenetv3large", "transformer"],
                     default="mobilenet",
-                    help="Choose the model to export: 'mobilenet' (default), 'squeezenet', 'alexnet', 'mobilenetv3small', 'mobilenetv3large', or 'transformer'.")
+                    help="Choose the model to export: 'mobilenet' (default), 'squeezenet', 'alexnet', resnet, 'mobilenetv3small', 'mobilenetv3large', or 'transformer'.")
 parser.add_argument("--precision", type=str, choices=["fp32", "fp16"],
                     default="fp32",
                     help="Choose the model data type, fp32 or fp16")
@@ -38,6 +38,9 @@ if args.model == "squeezenet":
     sample_inputs = (torch.randn(1, 3, 224, 224),)
 elif args.model == "alexnet":
     model = models.alexnet(weights=models.AlexNet_Weights.DEFAULT).eval()
+    sample_inputs = (torch.randn(1, 3, 224, 224),)
+elif args.model == "resnet":
+    model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT).eval()
     sample_inputs = (torch.randn(1, 3, 224, 224),)
 elif args.model == "transformer":
     class SimpleTransformer(torch.nn.Module):
