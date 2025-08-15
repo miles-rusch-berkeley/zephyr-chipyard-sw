@@ -15,7 +15,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/reboot.h>
 
-const size_t batch_size = 1; // the test is only for batch size 1
+const size_t batch_size = 4; // the test is only for batch size 1
 const size_t input_channels = 2048;
 const size_t output_channels = 256;
 
@@ -64,12 +64,12 @@ int main(void)
 	}
 	printf("XNNPACK initialized successfully!\n");
 
-	int8_t *input_data = (int8_t *)malloc(input_channels * sizeof(int8_t));
+	int8_t *input_data = (int8_t *)malloc(input_channels * batch_size * sizeof(int8_t));
 	int8_t *weights = (int8_t *)malloc(input_channels * output_channels * sizeof(int8_t));
 	float *scale = (float *)malloc(output_channels * sizeof(float));
 	int32_t *bias = (int32_t *)malloc(output_channels * sizeof(int32_t));
-	int8_t *output_data = (int8_t *)malloc(output_channels * sizeof(int8_t));
-	int8_t *output_data_ref = (int8_t *)malloc(output_channels * sizeof(int8_t));
+	int8_t *output_data = (int8_t *)malloc(output_channels * batch_size * sizeof(int8_t));
+	int8_t *output_data_ref = (int8_t *)malloc(output_channels * batch_size * sizeof(int8_t));
 	
 	int8_t minzp = -128;
 	int8_t maxzp = 127;
@@ -80,7 +80,7 @@ int main(void)
 	printf("Preparing input data and weights\n");
 	// Initialize input data
 	int8_t zero_point = 0;
-	for (size_t i = 0; i < input_channels; i++) {
+	for (size_t i = 0; i < input_channels * batch_size; i++) {
 		input_data[i] = (int8_t)i;
 	}
 	// Initialize weights
@@ -92,14 +92,16 @@ int main(void)
 		bias[i] = (int32_t)i;
 	}
 	// Compute reference output
-	for (size_t i = 0; i < output_channels; i++) {
-		output_data[i] = 0;
-		int32_t acc = (int32_t) bias[i];
-		for (size_t j = 0; j < input_channels; j++) {
-			acc += ((int32_t)input_data[j]) * (int32_t)weights[i * input_channels + j];
+	for (size_t b = 0; b < batch_size; b++) {
+		for (size_t i = 0; i < output_channels; i++) {
+			output_data[i + output_channels*b] = 0;
+			int32_t acc = (int32_t) bias[i];
+			for (size_t j = 0; j < input_channels * batch_size; j++) {
+				acc += ((int32_t)input_data[j]) * (int32_t)weights[i * input_channels + j];
+			}
+			float facc = scale[i] * (float)acc;
+			output_data_ref[i + output_channels*b] = (int8_t)fmaxf(fminf(facc, 127.0f), -128.0f);
 		}
-		float facc = scale[i] * (float)acc;
-		output_data_ref[i] = (int8_t)fmaxf(fminf(facc, 127.0f), -128.0f);
 	}
 
 	printf("Creating operators\n");
@@ -169,7 +171,7 @@ int main(void)
 	printf("\n"); */
 
 	// Verify the output
-	for (size_t i = 0; i < output_channels; i++) {
+	for (size_t i = 0; i < output_channels * batch_size; i++) {
 		float diff = fabsf(output_data[i] - output_data_ref[i]);
 		diff /= fabsf(output_data_ref[i]);
 		if (diff > 1e-5) {
