@@ -15,7 +15,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/reboot.h>
 
-const size_t batch_size = 4; // the test is only for batch size 1
+const size_t batch_size = 16; // the test is only for batch size 1
 const size_t input_channels = 2048;
 const size_t output_channels = 256;
 
@@ -81,11 +81,11 @@ int main(void)
 	// Initialize input data
 	int8_t zero_point = 0;
 	for (size_t i = 0; i < input_channels * batch_size; i++) {
-		input_data[i] = (int8_t)i;
+		input_data[i] = (int8_t)(i%128);
 	}
 	// Initialize weights
 	for (size_t i = 0; i < input_channels * output_channels; i++) {
-		weights[i] = (int8_t)i * i;
+		weights[i] = (int8_t)((i * i)%128);
 	}
 	for (size_t i = 0; i < output_channels; i++) {
 		scale[i] = (float)1.0f;
@@ -172,11 +172,10 @@ int main(void)
 
 	// Verify the output
 	for (size_t i = 0; i < output_channels * batch_size; i++) {
-		float diff = fabsf(output_data[i] - output_data_ref[i]);
-		diff /= fabsf(output_data_ref[i]);
-		if (diff > 1e-5) {
-			printf("Output verification failed at index %zu: expected %f, got %f\n", i,
-			       (double)output_data_ref[i], (double)output_data[i]);
+		float diff = output_data[i] - output_data_ref[i];
+		if (diff != 0) {
+			printf("Output verification failed at index %zu: expected %d, got %d\n", i,
+			       output_data_ref[i], output_data[i]);
 		}
 	}
 
