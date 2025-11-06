@@ -15,9 +15,9 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/reboot.h>
 
-const size_t batch_size = 1; // the test is only for batch size 1
-const size_t input_channels = 2048;
-const size_t output_channels = 256;
+const size_t batch_size = 16;
+const size_t input_channels = 4;
+const size_t output_channels = 32;
 
 unsigned long cycle()
 {
@@ -26,24 +26,11 @@ unsigned long cycle()
 	return cc;
 }
 
-volatile int wait = 0;
 int main(void)
 {
-	printf("Hello World! %s\n", CONFIG_BOARD_TARGET);
-	printf("Zephyr is running on %d CPUs\n", CONFIG_MP_MAX_NUM_CPUS);
-	printf("Running XNNPACK FP32 Test\n");
-	// while(wait == 0); // used for debugging
-
-	// Test malloc
-	void *test_alloc = aligned_alloc(0x40, 0x380);
-	test_alloc = aligned_alloc(0x40, 0x380);
-	if (!test_alloc) {
-		printf("Test malloc failed!\n");
-		return -1;
-	} else {
-		printf("Test malloc succeeded!\n");
-		free(test_alloc);
-	}
+	printf("Target: %s\n", CONFIG_BOARD_TARGET);
+	printf("CPUs: %d\n", CONFIG_MP_MAX_NUM_CPUS);
+	printf("XNNPACK QS8\n");
 
 	// create pthreadpool
 	pthreadpool_t threadpool = NULL;
@@ -52,8 +39,6 @@ int main(void)
 	if (threadpool == NULL) {
 		printf("Failed to create pthreadpool\n");
 		return -1;
-	} else {
-		printf("pthreadpool created successfully!\n");
 	}
 
 	// Initialize XNNPACK
@@ -62,25 +47,23 @@ int main(void)
 		printf("Failed to initialize XNNPack, status code: %d\n", status);
 		return -1;
 	}
-	printf("XNNPACK initialized successfully!\n");
 
-	int8_t *input_data = (int8_t *)malloc(input_channels * sizeof(int8_t));
+	int8_t *input_data = (int8_t *)malloc(batch_size * input_channels * sizeof(int8_t));
 	int8_t *weights = (int8_t *)malloc(input_channels * output_channels * sizeof(int8_t));
 	float *scale = (float *)malloc(output_channels * sizeof(float));
 	int32_t *bias = (int32_t *)malloc(output_channels * sizeof(int32_t));
-	int8_t *output_data = (int8_t *)malloc(output_channels * sizeof(int8_t));
-	int8_t *output_data_ref = (int8_t *)malloc(output_channels * sizeof(int8_t));
+	int8_t *output_data = (int8_t *)malloc(batch_size * output_channels * sizeof(int8_t));
+	int8_t *output_data_ref = (int8_t *)malloc(batch_size * output_channels * sizeof(int8_t));
 	
 	int8_t minzp = -128;
 	int8_t maxzp = 127;
 	int8_t outzp = 0;
 
-	printf("Test shapes: %zu, %zu\n", input_channels, output_channels);
+	printf("chIn: %zu, chOut: %zu, bSz: %zu\n", input_channels, output_channels, batch_size);
 
-	printf("Preparing input data and weights\n");
 	// Initialize input data
 	int8_t zero_point = 0;
-	for (size_t i = 0; i < input_channels; i++) {
+	for (size_t i = 0; i < batch_size * input_channels; i++) {
 		input_data[i] = (int8_t)i;
 	}
 	// Initialize weights
@@ -92,17 +75,17 @@ int main(void)
 		bias[i] = (int32_t)i;
 	}
 	// Compute reference output
-	for (size_t i = 0; i < output_channels; i++) {
-		output_data[i] = 0;
-		int32_t acc = (int32_t) bias[i];
-		for (size_t j = 0; j < input_channels; j++) {
-			acc += ((int32_t)input_data[j]) * (int32_t)weights[i * input_channels + j];
+	for (size_t b = 0; b < batch_size; b++) {
+		for (size_t i = 0; i < output_channels; i++) {
+			output_data[b * output_channels + i] = 0;
+			int32_t acc = (int32_t) bias[i];
+			for (size_t j = 0; j < input_channels; j++) {
+				acc += ((int32_t)input_data[b * input_channels + j]) * (int32_t)weights[i * input_channels + j];
+			}
+			float facc = scale[i] * (float)acc;
+			output_data_ref[b * output_channels + i] = (int8_t)fmaxf(fminf(facc, 127.0f), -128.0f);
 		}
-		float facc = scale[i] * (float)acc;
-		output_data_ref[i] = (int8_t)fmaxf(fminf(facc, 127.0f), -128.0f);
 	}
-
-	printf("Creating operators\n");
 	// Create the Fully Connected operator
 	xnn_operator_t fc_op = NULL;
 	status = xnn_create_fully_connected_nc_qs8_qc8w(
@@ -145,8 +128,6 @@ int main(void)
 		return -1;
 	}
 
-	printf("Shape of input and output data: %d, %d\n", input_channels, output_channels);
-
 	unsigned long clock_start = cycle();
 
 	// Run the operator
@@ -169,14 +150,31 @@ int main(void)
 	printf("\n"); */
 
 	// Verify the output
-	for (size_t i = 0; i < output_channels; i++) {
-		float diff = fabsf(output_data[i] - output_data_ref[i]);
-		diff /= fabsf(output_data_ref[i]);
-		if (diff > 1e-5) {
-			printf("Output verification failed at index %zu: expected %f, got %f\n", i,
-			       (double)output_data_ref[i], (double)output_data[i]);
+	for (size_t b = 0; b < batch_size; b++) {
+		for (size_t i = 0; i < output_channels; i++) {
+		int8_t diff = output_data[b * output_channels + i] - output_data_ref[b * output_channels + i];
+		if (diff != 0) {
+			printf("Output verification failed at index %zu, batch %zu: expected %d, got %d\n", i, b,
+			    output_data_ref[b * output_channels + i], output_data[b * output_channels + i]);
+			
+				for (size_t b = 0; b < batch_size; b++) {
+					printf("batch %zu:\n", b);
+					printf("opu:\n");
+					for (size_t ii = 0; ii < output_channels; ii++) {
+						printf("och=%zu, %d\n ", ii, output_data[b * output_channels + ii]);
+					}
+					printf("reference:\n");
+					for (size_t ii = 0; ii < output_channels; ii++) {
+						printf("och=%zu, %d\n ", ii, output_data_ref[b * output_channels + ii]);
+					}
+				}
+				xnn_delete_operator(fc_op);
+				sys_reboot(SYS_REBOOT_COLD);
+				return 1;
+			}
 		}
 	}
+	// printf("Output verification passed!\n");
 
 	// Cleanup
 	xnn_delete_operator(fc_op);
