@@ -65,15 +65,17 @@ int main(void)
 	// Initialize input data
 	int8_t zero_point = 0;
 	for (size_t i = 0; i < batch_size * input_channels; i++) {
-		input_data[i] = (int8_t)(i-2);
+		// input_data[i] = (int8_t)(1);
+		input_data[i] = (int8_t)(i - (batch_size*input_channels>>1));
 	}
 	// Initialize weights
 	for (size_t i = 0; i < input_channels * output_channels; i++) {
+		// weights[i] = (int8_t)((i - ((input_channels*output_channels)>>1)));
 		weights[i] = (int8_t)(1);
 	}
 	for (size_t i = 0; i < output_channels; i++) {
 		scale[i] = (float)1.0f;
-		bias[i] = (int32_t)i;
+		bias[i] = (int32_t)(i - (output_channels>>1));
 	}
 	// Create the Fully Connected operator
 	xnn_operator_t fc_rvv = NULL;
@@ -188,17 +190,17 @@ int main(void)
 			printf("Output verification failed at index %zu, batch %zu: expected %d, got %d\n", i, b,
 			    output_data_ref[b * output_channels + i], output_data[b * output_channels + i]);
 			
-				printf("opu:\n");
-				for (size_t b = 0; b < batch_size; b++) {
-					for (size_t ii = 0; ii < output_channels; ii++) {
-						printf("%d ", output_data[b * output_channels + ii]);
-					}
-					printf("\n");
-				}
 				printf("reference:\n");
 				for (size_t b = 0; b < batch_size; b++) {
 					for (size_t ii = 0; ii < output_channels; ii++) {
 						printf("%d ", output_data_ref[b * output_channels + ii]);
+					}
+					printf("\n");
+				}
+				printf("opu:\n");
+				for (size_t b = 0; b < batch_size; b++) {
+					for (size_t ii = 0; ii < output_channels; ii++) {
+						printf("%d ", output_data[b * output_channels + ii]);
 					}
 					printf("\n");
 				}
