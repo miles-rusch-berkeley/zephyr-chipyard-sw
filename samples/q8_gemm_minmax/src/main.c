@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <sys/_intsup.h>
 #include <xnnpack.h> // Include XNNPack headers
+#include "xnnpack/operator.h"
 #include <zephyr/arch/cpu.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/reboot.h>
@@ -74,72 +75,110 @@ int main(void)
 		scale[i] = (float)1.0f;
 		bias[i] = (int32_t)i;
 	}
-	// Compute reference output
-	for (size_t b = 0; b < batch_size; b++) {
-		for (size_t i = 0; i < output_channels; i++) {
-			output_data[i * batch_size + b] = 0;
-			int32_t acc = (int32_t) bias[i];
-			for (size_t j = 0; j < input_channels; j++) {
-				acc += ((int32_t)input_data[j * batch_size + b]) * (int32_t)weights[i * input_channels + j];
-			}
-			float facc = scale[i] * (float)acc;
-			output_data_ref[i * batch_size + b] = (int8_t)fmaxf(fminf(facc, 127.0f), -128.0f);
-		}
-	}
 	// Create the Fully Connected operator
-	xnn_operator_t fc_op = NULL;
+	xnn_operator_t fc_rvv = NULL;
 	status = xnn_create_fully_connected_nc_qs8_qc8w(
-						   input_channels,  // Input size per batch
-						   output_channels, // Output size per batch
-						   input_channels,  // Input stride
-						   output_channels, // Output stride
-						   0,			   	// Input zero point
-						   1.0f,			// Input scale
-						   scale,	 		// kernel scale vector
-						   weights,         // Weights matrix
-						   bias,            // Bias vector
-						   outzp,			   	// output zero point
-  						   1.0f,         	// Output scale
-						   minzp,       // Min activation
-						   maxzp,        // Max activation
-						   0,               // Flags
-						   NULL,            // Code cache
-						   NULL,            // Weights cache
-						   &fc_op);
-
+		input_channels,  // Input size per batch
+		output_channels, // Output size per batch
+		input_channels,  // Input stride
+		output_channels, // Output stride
+		0,			   	// Input zero point
+		1.0f,			// Input scale
+		scale,	 		// kernel scale vector
+		weights,         // Weights matrix
+		bias,            // Bias vector
+		outzp,			   	// output zero point
+		1.0f,         	// Output scale
+		minzp,       // Min activation
+		maxzp,        // Max activation
+		0,               // Flags
+		NULL,            // Code cache
+		NULL,            // Weights cache
+		&fc_rvv);
 	if (status != xnn_status_success) {
 		printf("Failed to create Fully Connected operator, status code: %d\n", status);
 		return -1;
 	}
-
+	fc_rvv->ukernel.gemm.mr = 4;
+	fc_rvv->ukernel.gemm.mr_packed = 4;
+	
 	// Reshape the operator
-	status = xnn_reshape_fully_connected_nc_qs8_qc8w(fc_op, batch_size, threadpool);
+	status = xnn_reshape_fully_connected_nc_qs8_qc8w(fc_rvv, batch_size, threadpool);
 	if (status != xnn_status_success) {
 		printf("Failed to reshape Fully Connected operator, status code: %d\n", status);
-		xnn_delete_operator(fc_op);
+		xnn_delete_operator(fc_rvv);
+		return -1;
+	}
+	// Setup the operator
+	status = xnn_setup_fully_connected_nc_qs8_qc8w(fc_rvv, input_data, output_data_ref);
+	if (status != xnn_status_success) {
+		printf("Failed to setup Fully Connected operator, status code: %d\n", status);
+		xnn_delete_operator(fc_rvv);
 		return -1;
 	}
 
+	xnn_operator_t fc_opu = NULL;
+	status = xnn_create_fully_connected_nc_qs8_qc8w(
+		input_channels,  // Input size per batch
+		output_channels, // Output size per batch
+		input_channels,  // Input stride
+		output_channels, // Output stride
+		0,			   	// Input zero point
+		1.0f,			// Input scale
+		scale,	 		// kernel scale vector
+		weights,         // Weights matrix
+		bias,            // Bias vector
+		outzp,			   	// output zero point
+		1.0f,         	// Output scale
+		minzp,       // Min activation
+		maxzp,        // Max activation
+		0,               // Flags
+		NULL,            // Code cache
+		NULL,            // Weights cache
+		&fc_opu);
+	if (status != xnn_status_success) {
+		printf("Failed to create Fully Connected operator, status code: %d\n", status);
+		return -1;
+	}
+	// Reshape the operator
+	status = xnn_reshape_fully_connected_nc_qs8_qc8w(fc_opu, batch_size, threadpool);
+	if (status != xnn_status_success) {
+		printf("Failed to reshape Fully Connected operator, status code: %d\n", status);
+		xnn_delete_operator(fc_opu);
+		xnn_delete_operator(fc_rvv);
+		return -1;
+	}
 	// Setup the operator
-	status = xnn_setup_fully_connected_nc_qs8_qc8w(fc_op, input_data, output_data);
+	status = xnn_setup_fully_connected_nc_qs8_qc8w(fc_opu, input_data, output_data);
 	if (status != xnn_status_success) {
 		printf("Failed to setup Fully Connected operator, status code: %d\n", status);
-		xnn_delete_operator(fc_op);
+		xnn_delete_operator(fc_opu);
+		xnn_delete_operator(fc_rvv);
 		return -1;
 	}
 
 	unsigned long clock_start = cycle();
-
 	// Run the operator
-	status = xnn_run_operator(fc_op, threadpool);
+	status = xnn_run_operator(fc_rvv, threadpool);
 	if (status != xnn_status_success) {
 		printf("Failed to run Fully Connected operator, status code: %d\n", status);
-		xnn_delete_operator(fc_op);
+		xnn_delete_operator(fc_rvv);
+		xnn_delete_operator(fc_opu);
 		return -1;
 	}
-
 	unsigned long clock_end = cycle();
-	printf("Clocks taken: %ld\n", (clock_end - clock_start));
+	printf("Clocks taken (rvv): %ld\n", (clock_end - clock_start));
+
+	clock_start = cycle();
+	status = xnn_run_operator(fc_opu, threadpool);
+	if (status != xnn_status_success) {
+		printf("Failed to run Fully Connected operator, status code: %d\n", status);
+		xnn_delete_operator(fc_opu);
+		xnn_delete_operator(fc_rvv);
+		return -1;
+	}
+	clock_end = cycle();
+	printf("Clocks taken (opu): %ld\n", (clock_end - clock_start));
 
 	// Verify the output
 	for (size_t b = 0; b < batch_size; b++) {
@@ -163,17 +202,18 @@ int main(void)
 					}
 					printf("\n");
 				}
-				xnn_delete_operator(fc_op);
+				xnn_delete_operator(fc_opu);
+				xnn_delete_operator(fc_rvv);
 				sys_reboot(SYS_REBOOT_COLD);
 				return 1;
 			}
 		}
 	}
-	// printf("Output verification passed!\n");
+	printf("Output verification passed!\n");
 
 	// Cleanup
-	xnn_delete_operator(fc_op);
-
+	xnn_delete_operator(fc_opu);
+	xnn_delete_operator(fc_rvv);
 	sys_reboot(SYS_REBOOT_COLD);
 	return 0;
 }
