@@ -190,17 +190,17 @@ int main(void)
 			printf("Output verification failed at index %zu, batch %zu: expected %d, got %d\n", i, b,
 			    output_data_ref[b * output_channels + i], output_data[b * output_channels + i]);
 			
-				printf("reference:\n");
-				for (size_t b = 0; b < batch_size; b++) {
-					for (size_t ii = 0; ii < output_channels; ii++) {
-						printf("%d ", output_data_ref[b * output_channels + ii]);
-					}
-					printf("\n");
-				}
 				printf("opu:\n");
 				for (size_t b = 0; b < batch_size; b++) {
 					for (size_t ii = 0; ii < output_channels; ii++) {
 						printf("%d ", output_data[b * output_channels + ii]);
+					}
+					printf("\n");
+				}
+				printf("reference:\n");
+				for (size_t b = 0; b < batch_size; b++) {
+					for (size_t ii = 0; ii < output_channels; ii++) {
+						printf("%d ", output_data_ref[b * output_channels + ii]);
 					}
 					printf("\n");
 				}
