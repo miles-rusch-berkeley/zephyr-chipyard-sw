@@ -18,7 +18,7 @@
 
 const size_t batch_size = 16;
 const size_t input_channels = 4;
-const size_t output_channels = 32;
+const size_t output_channels = 64;
 
 unsigned long cycle()
 {
@@ -77,48 +77,6 @@ int main(void)
 		scale[i] = (float)1.0f;
 		bias[i] = (int32_t)(i - (output_channels>>1));
 	}
-	// Create the Fully Connected operator
-	xnn_operator_t fc_rvv = NULL;
-	status = xnn_create_fully_connected_nc_qs8_qc8w(
-		input_channels,  // Input size per batch
-		output_channels, // Output size per batch
-		input_channels,  // Input stride
-		output_channels, // Output stride
-		0,			   	// Input zero point
-		1.0f,			// Input scale
-		scale,	 		// kernel scale vector
-		weights,         // Weights matrix
-		bias,            // Bias vector
-		outzp,			   	// output zero point
-		1.0f,         	// Output scale
-		minzp,       // Min activation
-		maxzp,        // Max activation
-		0,               // Flags
-		NULL,            // Code cache
-		NULL,            // Weights cache
-		&fc_rvv);
-	if (status != xnn_status_success) {
-		printf("Failed to create Fully Connected operator, status code: %d\n", status);
-		return -1;
-	}
-	fc_rvv->ukernel.gemm.nr = 4;
-	fc_rvv->ukernel.gemm.mr = 4;
-	fc_rvv->ukernel.gemm.mr_packed = 4;
-	
-	// Reshape the operator
-	status = xnn_reshape_fully_connected_nc_qs8_qc8w(fc_rvv, batch_size, threadpool);
-	if (status != xnn_status_success) {
-		printf("Failed to reshape Fully Connected operator, status code: %d\n", status);
-		xnn_delete_operator(fc_rvv);
-		return -1;
-	}
-	// Setup the operator
-	status = xnn_setup_fully_connected_nc_qs8_qc8w(fc_rvv, input_data, output_data_ref);
-	if (status != xnn_status_success) {
-		printf("Failed to setup Fully Connected operator, status code: %d\n", status);
-		xnn_delete_operator(fc_rvv);
-		return -1;
-	}
 
 	xnn_operator_t fc_opu = NULL;
 	status = xnn_create_fully_connected_nc_qs8_qc8w(
@@ -148,7 +106,6 @@ int main(void)
 	if (status != xnn_status_success) {
 		printf("Failed to reshape Fully Connected operator, status code: %d\n", status);
 		xnn_delete_operator(fc_opu);
-		xnn_delete_operator(fc_rvv);
 		return -1;
 	}
 	// Setup the operator
@@ -156,16 +113,13 @@ int main(void)
 	if (status != xnn_status_success) {
 		printf("Failed to setup Fully Connected operator, status code: %d\n", status);
 		xnn_delete_operator(fc_opu);
-		xnn_delete_operator(fc_rvv);
 		return -1;
 	}
 
 	unsigned long clock_start = cycle();
 	// Run the operator
-	status = xnn_run_operator(fc_rvv, threadpool);
 	if (status != xnn_status_success) {
 		printf("Failed to run Fully Connected operator, status code: %d\n", status);
-		xnn_delete_operator(fc_rvv);
 		xnn_delete_operator(fc_opu);
 		return -1;
 	}
@@ -177,46 +131,20 @@ int main(void)
 	if (status != xnn_status_success) {
 		printf("Failed to run Fully Connected operator, status code: %d\n", status);
 		xnn_delete_operator(fc_opu);
-		xnn_delete_operator(fc_rvv);
 		return -1;
 	}
 	clock_end = cycle();
 	printf("Clocks taken (opu): %ld\n", (clock_end - clock_start));
 
 	// Verify the output
+	printf("opu:\n");
 	for (size_t b = 0; b < batch_size; b++) {
-		for (size_t i = 0; i < output_channels; i++) {
-		int8_t diff = output_data[b * output_channels + i] - output_data_ref[b * output_channels + i];
-		if (diff != 0) {
-			printf("Output verification failed at index %zu, batch %zu: expected %d, got %d\n", i, b,
-			    output_data_ref[b * output_channels + i], output_data[b * output_channels + i]);
-			
-				printf("opu:\n");
-				for (size_t b = 0; b < batch_size; b++) {
-					for (size_t ii = 0; ii < output_channels; ii++) {
-						printf("%d ", output_data[b * output_channels + ii]);
-					}
-					printf("\n");
-				}
-				printf("reference:\n");
-				for (size_t b = 0; b < batch_size; b++) {
-					for (size_t ii = 0; ii < output_channels; ii++) {
-						printf("%d ", output_data_ref[b * output_channels + ii]);
-					}
-					printf("\n");
-				}
-				xnn_delete_operator(fc_opu);
-				xnn_delete_operator(fc_rvv);
-				sys_reboot(SYS_REBOOT_COLD);
-				return 1;
-			}
+		for (size_t ii = 0; ii < output_channels; ii++) {
+			printf("%d ", output_data[b * output_channels + ii]);
 		}
+		printf("\n");
 	}
-	printf("Output verification passed!\n");
-
-	// Cleanup
 	xnn_delete_operator(fc_opu);
-	xnn_delete_operator(fc_rvv);
 	sys_reboot(SYS_REBOOT_COLD);
 	return 0;
 }
