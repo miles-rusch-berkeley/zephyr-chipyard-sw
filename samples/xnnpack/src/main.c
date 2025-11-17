@@ -77,17 +77,16 @@ int main(void)
 		bias[i] = (int32_t)(i - (output_channels>>1));
 	}
 	// Compute reference output
-	for (size_t b = 0; b < batch_size; b++) {
-		for (size_t i = 0; i < output_channels; i++) {
-			output_data[i * batch_size + b] = 0;
-			int32_t acc = (int32_t) bias[i];
-			for (size_t j = 0; j < input_channels; j++) {
-				acc += ((int32_t)input_data[j * batch_size + b]) * (int32_t)weights[i * input_channels + j];
-			}
-			float facc = scale[i] * (float)acc;
-			output_data_ref[i * batch_size + b] = (int8_t)fmaxf(fminf(facc, 127.0f), -128.0f);
+	for (size_t i = 0; i < output_channels; i++) {
+		output_data[i] = 0;
+		int32_t acc = (int32_t) bias[i];
+		for (size_t j = 0; j < input_channels; j++) {
+			acc += ((int32_t)input_data[j]) * (int32_t)weights[i * input_channels + j];
 		}
+		float facc = scale[i] * (float)acc;
+		output_data_ref[i] = (int8_t)fmaxf(fminf(facc, 127.0f), -128.0f);
 	}
+
 	// Create the Fully Connected operator
 	xnn_operator_t fc_op = NULL;
 	status = xnn_create_fully_connected_nc_qs8_qc8w(
@@ -146,28 +145,27 @@ int main(void)
 	// Verify the output
 	for (size_t b = 0; b < batch_size; b++) {
 		for (size_t i = 0; i < output_channels; i++) {
-		int8_t diff = output_data[b * output_channels + i] - output_data_ref[b * output_channels + i];
-		if (diff != 0) {
-			printf("Output verification failed at index %zu, batch %zu: expected %d, got %d\n", i, b,
-			    output_data_ref[b * output_channels + i], output_data[b * output_channels + i]);
-			
-				printf("opu:\n");
-				for (size_t b = 0; b < batch_size; b++) {
+			int8_t diff = output_data[b * output_channels + i] - output_data_ref[b * output_channels + i];
+			if (diff != 0) {
+				printf("Output verification failed at index %zu, batch %zu: expected %d, got %d\n", i, b,
+					output_data_ref[b * output_channels + i], output_data[b * output_channels + i]);
+				
+					printf("reference:\n");
 					for (size_t ii = 0; ii < output_channels; ii++) {
-						printf("%d ", output_data[b * output_channels + ii]);
+						printf("%d ", output_data_ref[ii]);
 					}
 					printf("\n");
-				}
-				printf("reference:\n");
-				for (size_t b = 0; b < batch_size; b++) {
-					for (size_t ii = 0; ii < output_channels; ii++) {
-						printf("%d ", output_data_ref[b * output_channels + ii]);
+					printf("opu:\n");
+					for (size_t b = 0; b < batch_size; b++) {
+						for (size_t ii = 0; ii < output_channels; ii++) {
+							printf("%d ", output_data[b * output_channels + ii]);
+						}
+						printf("\n");
 					}
-					printf("\n");
+					xnn_delete_operator(fc_op);
+					sys_reboot(SYS_REBOOT_COLD);
+					return 0;
 				}
-				xnn_delete_operator(fc_op);
-				sys_reboot(SYS_REBOOT_COLD);
-				return 1;
 			}
 		}
 	}
@@ -175,7 +173,6 @@ int main(void)
 
 	// Cleanup
 	xnn_delete_operator(fc_op);
-
 	sys_reboot(SYS_REBOOT_COLD);
 	return 0;
 }

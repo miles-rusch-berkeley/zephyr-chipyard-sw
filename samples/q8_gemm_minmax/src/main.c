@@ -101,6 +101,7 @@ int main(void)
 		printf("Failed to create Fully Connected operator, status code: %d\n", status);
 		return -1;
 	}
+	fc_rvv->ukernel.gemm.nr = 4;
 	fc_rvv->ukernel.gemm.mr = 4;
 	fc_rvv->ukernel.gemm.mr_packed = 4;
 	
