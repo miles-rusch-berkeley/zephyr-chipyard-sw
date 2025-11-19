@@ -15,9 +15,9 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/reboot.h>
 
-const size_t batch_size = 16;
+const size_t batch_size = 2048;
 const size_t input_channels = 2048;
-const size_t output_channels = 32;
+const size_t output_channels = 64;
 
 unsigned long cycle()
 {
@@ -115,7 +115,8 @@ int main(void)
 		}
 
 		// Reshape the operator
-		status = xnn_reshape_fully_connected_nc_qs8_qc8w(fc_op, batch_size, threadpool);
+		size_t batch_k = k;
+		status = xnn_reshape_fully_connected_nc_qs8_qc8w(fc_op, batch_k, threadpool);
 		if (status != xnn_status_success) {
 			printf("Failed to reshape Fully Connected operator, status code: %d\n", status);
 			xnn_delete_operator(fc_op);
@@ -136,7 +137,7 @@ int main(void)
 		unsigned long clock_start = cycle();
 		status = xnn_run_operator(fc_op, threadpool);
 		unsigned long clock_end = cycle();
-		printf("%zu, %zu, %zu, %ld\n", k, batch_size, output_channels, (clock_end - clock_start));
+		printf("%zu, %zu, %zu, %ld\n", k, batch_k, output_channels, (clock_end - clock_start));
 		if (status != xnn_status_success) {
 			printf("Failed to run Fully Connected operator, status code: %d\n", status);
 			xnn_delete_operator(fc_op);
