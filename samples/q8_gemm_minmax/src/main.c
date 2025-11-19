@@ -70,8 +70,8 @@ int main(void)
 	}
 	// Initialize weights
 	for (size_t i = 0; i < input_channels * output_channels; i++) {
-		// weights[i] = (int8_t)((i - ((input_channels*output_channels)>>1)));
-		weights[i] = (int8_t)(1);
+		weights[i] = (int8_t)((i - ((input_channels*output_channels)>>1)));
+		// weights[i] = (int8_t)(1);
 	}
 	for (size_t i = 0; i < output_channels; i++) {
 		scale[i] = (float)1.0f;
