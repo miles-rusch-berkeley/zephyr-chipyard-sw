@@ -18,7 +18,7 @@
 
 const size_t batch_size = 16;
 const size_t input_channels = 4;
-const size_t output_channels = 64;
+const size_t output_channels = 32;
 
 unsigned long cycle()
 {
@@ -77,7 +77,18 @@ int main(void)
 		scale[i] = (float)1.0f;
 		bias[i] = (int32_t)(i - (output_channels>>1));
 	}
-
+	// Compute reference output
+	for (size_t b = 0; b < batch_size; b++) {
+		for (size_t i = 0; i < output_channels; i++) {
+			output_data_ref[b * output_channels + i] = 0;
+			int32_t acc = (int32_t) bias[i];
+			for (size_t j = 0; j < input_channels; j++) {
+				acc += ((int32_t)input_data[b * input_channels + j]) * (int32_t)weights[i * input_channels + j];
+			}
+			float facc = scale[i] * (float)acc;
+			output_data_ref[b * output_channels + i] = (int8_t)fmaxf(fminf(facc, 127.0f), -128.0f);
+		}
+	}
 	xnn_operator_t fc_opu = NULL;
 	status = xnn_create_fully_connected_nc_qs8_qc8w(
 		input_channels,  // Input size per batch
@@ -116,34 +127,47 @@ int main(void)
 		return -1;
 	}
 
-	unsigned long clock_start = cycle();
 	// Run the operator
-	if (status != xnn_status_success) {
-		printf("Failed to run Fully Connected operator, status code: %d\n", status);
-		xnn_delete_operator(fc_opu);
-		return -1;
-	}
-	unsigned long clock_end = cycle();
-	printf("Clocks taken (rvv): %ld\n", (clock_end - clock_start));
-
-	clock_start = cycle();
+	unsigned long clock_start = cycle();
 	status = xnn_run_operator(fc_opu, threadpool);
 	if (status != xnn_status_success) {
 		printf("Failed to run Fully Connected operator, status code: %d\n", status);
 		xnn_delete_operator(fc_opu);
 		return -1;
 	}
-	clock_end = cycle();
+	unsigned long clock_end = cycle();
 	printf("Clocks taken (opu): %ld\n", (clock_end - clock_start));
 
 	// Verify the output
-	printf("opu:\n");
 	for (size_t b = 0; b < batch_size; b++) {
-		for (size_t ii = 0; ii < output_channels; ii++) {
-			printf("%d ", output_data[b * output_channels + ii]);
+		for (size_t i = 0; i < output_channels; i++) {
+			int8_t diff = output_data_ref[b * output_channels + i] - output_data[i * batch_size + b];
+			if (diff != 0) {
+				printf("Output verification failed at index %zu, batch %zu: expected %d, got %d\n", i, b,
+					output_data_ref[b * output_channels + i], output_data[i * batch_size + b]);
+				
+					printf("opu:\n");
+					for (size_t ii = 0; ii < output_channels; ii++) {
+					for (size_t b = 0; b < batch_size; b++) {
+							printf("%d ", output_data[ii * batch_size + b]);
+						}
+						printf("\n");
+					}
+					printf("reference:\n");
+					for (size_t b = 0; b < batch_size; b++) {
+						for (size_t ii = 0; ii < output_channels; ii++) {
+							printf("%d ", output_data_ref[b * output_channels + ii]);
+						}
+						printf("\n");
+					}
+					xnn_delete_operator(fc_opu);
+					sys_reboot(SYS_REBOOT_COLD);
+					return -1;
+			}
 		}
-		printf("\n");
 	}
+	printf("Output verification passed!\n");
+
 	xnn_delete_operator(fc_opu);
 	sys_reboot(SYS_REBOOT_COLD);
 	return 0;
