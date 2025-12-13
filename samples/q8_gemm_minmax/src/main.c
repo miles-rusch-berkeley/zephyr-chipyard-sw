@@ -141,22 +141,22 @@ int main(void)
 	// Verify the output
 	for (size_t b = 0; b < batch_size; b++) {
 		for (size_t i = 0; i < output_channels; i++) {
-			int8_t diff = output_data_ref[b * output_channels + i] - output_data[i * batch_size + b];
+			int8_t diff = output_data[b * output_channels + i] - output_data_ref[b * output_channels + i];
 			if (diff != 0) {
-				printf("Output verification failed at index %zu, batch %zu: expected %d, got %d\n", i, b,
-					output_data_ref[b * output_channels + i], output_data[i * batch_size + b]);
+				printf("failed verification at index %zu, batch %zu: expected %d, got %d\n", i, b,
+					output_data_ref[b * output_channels + i], output_data[b * output_channels + i]);
 				
 					printf("opu:\n");
-					for (size_t ii = 0; ii < output_channels; ii++) {
-					for (size_t b = 0; b < batch_size; b++) {
-							printf("%d ", output_data[ii * batch_size + b]);
+					for (size_t bb = 0; bb < batch_size; bb++) {
+						for (size_t ii = 0; ii < output_channels; ii++) {
+							printf("%d ", output_data[bb * output_channels + ii]);
 						}
 						printf("\n");
 					}
 					printf("reference:\n");
-					for (size_t b = 0; b < batch_size; b++) {
+					for (size_t bb = 0; bb < batch_size; bb++) {
 						for (size_t ii = 0; ii < output_channels; ii++) {
-							printf("%d ", output_data_ref[b * output_channels + ii]);
+							printf("%d ", output_data_ref[bb * output_channels + ii]);
 						}
 						printf("\n");
 					}
@@ -166,7 +166,7 @@ int main(void)
 			}
 		}
 	}
-	printf("Output verification passed!\n");
+	printf("passed verification!\n");
 
 	xnn_delete_operator(fc_opu);
 	sys_reboot(SYS_REBOOT_COLD);
