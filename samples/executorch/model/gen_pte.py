@@ -7,9 +7,9 @@ from torchvision.models.squeezenet import SqueezeNet1_0_Weights  # Import weight
 from torchvision.models.mobilenetv3 import MobileNet_V3_Small_Weights  # Import weights for MobileNetV3-Small
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
-from executorch.exir import EdgeProgramManager, ExecutorchProgramManager, to_edge
-from executorch.exir.backend.backend_api import to_backend
+from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 
 # from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
@@ -25,13 +25,14 @@ parser.add_argument("--pte", type=str, default="model.pte", help="Path to output
 parser.add_argument("--model", type=str, choices=["mobilenet", "squeezenet", "lenet", "alexnet", "mobilenetv3small", "transformer"],
                     default="mobilenet",
                     help="Choose the model to export: 'mobilenet' (default), 'squeezenet', 'lenet', 'alexnet', 'mobilenetv3small', or 'transformer'.")
-parser.add_argument("--precision", type=str, choices=["fp32", "fp16"],
-                    default="fp32",
-                    help="Choose the model data type, fp32 or fp16")
+parser.add_argument("--precision", type=str, choices=["fp32", "fp16", "qs8", "qd8"],
+                    default="qd8",
+                    help="Choose the model data type, fp32 or fp16 or qs8 or qd8")
 args = parser.parse_args()
 pte_path = args.pte
 
 print("Selected Model:", args.model)
+print("Selected Precision:", args.precision)
 
 if args.model == "mobilenet":
     model = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
@@ -91,21 +92,34 @@ elif args.model == "gpt2":
         {1: torch.export.Dim("token_dim", max=model.config.block_size)},
         )
 
-# model = Int8DynActInt4WeightQuantizer(precision=torch.int8, groupsize=32).quantize(model)
 # half precision
-if args.precision == "fp32":
-    exported_program: ExportedProgram = export(model, sample_inputs)
-elif args.precision == "fp16":
+if args.precision == "fp16":
     model = model.half()
     sample_inputs = (sample_inputs[0].half(),)
-    exported_program: ExportedProgram = export(model, sample_inputs)
-# fp32
-edge: EdgeProgramManager = to_edge(exported_program)
+elif args.precision == "qs8":
+    qparams = get_symmetric_quantization_config(is_per_channel=True) 
+    quantizer = XNNPACKQuantizer()
+    quantizer.set_global(qparams)
+    training_ep = export(model, sample_inputs).module() 
+    model = prepare_pt2e(training_ep, quantizer) 
+    for cal_sample in sample_inputs:
+        model(cal_sample) # (4) Calibrate
+    model = convert_pt2e(model) # (5)
+elif args.precision == "qd8":
+    qparams = get_symmetric_quantization_config(is_per_channel=True, is_dynamic=True) 
+    quantizer = XNNPACKQuantizer()
+    quantizer.set_global(qparams)
+    training_ep = export(model, sample_inputs).module() 
+    model = prepare_pt2e(training_ep, quantizer) 
+    for cal_sample in sample_inputs:
+        model(cal_sample) # (4) Calibrate
+    model = convert_pt2e(model) # (5)
 
-# Set up the partitioner (using XnnpackPartitioner as in the original code)
-edge = edge.to_backend(XnnpackPartitioner())
-
-exec_prog = edge.to_executorch()
+exported_program: ExportedProgram = export(model, sample_inputs)
+exec_prog = to_edge_transform_and_lower(
+    exported_program,
+    partitioner=[XnnpackPartitioner()]
+).to_executorch()
 
 with open(pte_path, "wb") as file:
     exec_prog.write_to_file(file)

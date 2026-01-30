@@ -16,6 +16,8 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#include <zephyr/sys/reboot.h>
+
 struct _reent * _impure_ptr = nullptr;
 
 void *__dso_handle = nullptr;
@@ -336,25 +338,10 @@ int main()
 	ET_LOG(Info, "%zu outputs: ", outputs.size());
 	status = method->get_outputs(outputs.data(), outputs.size());
 	ET_CHECK(status == Error::Ok);
-	for (int i = 0; i < outputs.size(); ++i)
-	{
-		Tensor t = outputs[i].toTensor();
-		// The output might be collected and parsed so printf() is used instead
-		// of ET_LOG() here
-		for (int j = 0; j < outputs[i].toTensor().numel(); ++j)
-		{
-			if (t.scalar_type() == ScalarType::Int)
-			{
-				printf("Output[%d][%d]: %d\n", i, j, outputs[i].toTensor().const_data_ptr<int>()[j]);
-			}
-			else
-			{
-				printf("Output[%d][%d]: %f\n", i, j, outputs[i].toTensor().const_data_ptr<float>()[j]);
-			}
-		}
-	}
+
 out:
 	ET_LOG(Info, "Program complete, exiting.");
 	ET_LOG(Info, "\04");
+	sys_reboot(SYS_REBOOT_COLD);
 	return 0;
 }
